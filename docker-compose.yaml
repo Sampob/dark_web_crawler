@@ -1,0 +1,119 @@
+services:
+  flask:
+    build:
+      context: .
+      dockerfile: dockerfile/Dockerfile.flask
+    environment:
+      - FLASK_ENV=production
+    ports:
+      - "5000:5000"
+    command: ["gunicorn", "-b", "0.0.0.0:5000", "app.routes:app"]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: on-failure
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - crawler-network
+
+  redis:
+    image: "redis:alpine"
+    container_name: redis
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - crawler-network
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: dockerfile/Dockerfile.celery-worker
+    deploy:
+      replicas: 2
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DEPTH_LIMIT=5
+      - CLOSESPIDER_PAGECOUNT=0
+      - CLOSESPIDER_TIMEOUT=7200
+    depends_on:
+      - redis
+    command: ["/worker_entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.celery_config", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - crawler-network
+  
+  celery-beat:
+    build:
+      context: .
+      dockerfile: dockerfile/Dockerfile.celery-beat
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CRONTAB=0 0 */1 * *
+      - TIMEZONE=Europe/Helsinki
+    depends_on:
+      - redis
+    command: ["celery", "-A", "app.celery_config", "beat"]
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.celery_config", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - crawler-network
+
+  flower:
+    image: "mher/flower"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - FLOWER_PORT=5555
+    depends_on:
+      - redis
+    ports:
+      - "5555:5555"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5555"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - crawler-network
+  
+networks:
+  crawler-network:

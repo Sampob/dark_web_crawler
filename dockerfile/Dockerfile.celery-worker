@@ -1,0 +1,23 @@
+FROM python:3.12-slim
+
+RUN apt-get update && \
+    apt-get install -y tor privoxy && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+COPY config/torrc /etc/tor/torrc
+COPY config/privoxy-config /etc/privoxy/config
+
+RUN adduser --disabled-password --gecos '' celeryworker
+RUN chown -R celeryworker:celeryworker /app
+
+COPY worker_entrypoint.sh /worker_entrypoint.sh
+RUN chmod +x /worker_entrypoint.sh
+
+ENTRYPOINT ["/worker_entrypoint.sh"]

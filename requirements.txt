@@ -1,0 +1,10 @@
+scrapy
+celery
+redis
+flower
+stem
+flask
+scrapy-fake-useragent
+azure-identity
+azure-storage-blob
+azure-data-tables
